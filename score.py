@@ -41,7 +41,7 @@ def analyze_toxicity(text: str):
 def morph(sentence):
     sentence_num = sentence_seperate(sentence)
     morph_num = len(tagger.morphs(sentence))
-    result = sentence_num // morph_num
+    result = morph_num // sentence_num
 
     return result
 
