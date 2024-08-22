@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from sklearn.metrics.pairwise import cosine_similarity
 from transformers import BertTokenizer, BertModel
 import warnings
 
@@ -13,7 +14,7 @@ class BertClassifier(nn.Module):
         self.bert = bert_model
         self.classifier = nn.Linear(self.bert.config.hidden_size, num_labels)
     
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, token_type_ids=None):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         cls_output = outputs.last_hidden_state[:, 0, :]  # [CLS] 토큰의 임베딩
         logits = self.classifier(cls_output)
@@ -43,3 +44,26 @@ def process_input(user_input):
     predicted_label = torch.argmax(logits, dim=1).cpu().item()
     
     return predicted_label
+
+def get_sentence_embedding(sentence):
+    # 입력 문장을 토크나이징
+    inputs = tokenizer(sentence, return_tensors='pt', truncation=True, padding=True)
+    
+    # BERT 모델을 사용해 임베딩 추출
+    with torch.no_grad():
+        outputs = model(**inputs)
+    
+    # 모델 출력이 단일 텐서일 경우, 첫 번째 토큰의 임베딩을 사용
+    cls_embedding = outputs[:, :]
+    
+    return cls_embedding
+
+def calculate_cosine_similarity(sentence1, sentence2):
+    # 문장 임베딩 계산
+    embedding1 = get_sentence_embedding(sentence1)
+    embedding2 = get_sentence_embedding(sentence2)
+    
+    # 코사인 유사도 계산
+    similarity = cosine_similarity(embedding1, embedding2)
+    
+    return similarity[0][0]  
