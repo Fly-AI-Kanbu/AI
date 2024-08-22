@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 from googleapiclient import discovery
 from typing import List
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
-import os, io
-import schemas, aimodels
+import os, io, json
+import schemas, aimodels, score
 
 # .env 파일에서 환경 변수 로드
 load_dotenv()
@@ -16,14 +16,7 @@ client_openai = OpenAI(
     api_key = os.environ['OPENAI_API_KEY']
 )
 
-client_toxic = discovery.build(
-    "commentanalyzer",
-    "v1alpha1",
-    developerKey=os.environ['TOXIC_API_KEY'],
-    discoveryServiceUrl="https://commentanalyzer.googleapis.com/$discovery/rest?version=v1alpha1",
-    static_discovery=False,
-)
-
+####
 #####openai를 활용한 api
 @app.post("/chat", response_model=schemas.CompletionResponse)
 async def chat_completion(message: schemas.Message):
@@ -98,28 +91,6 @@ async def synthesize_speech(input_text: str = Form(...), speed: float = Form(1),
     except Exception as e:
         return {"error": str(e)}
     
-
-###건정성 평가#####
-
-@app.post("/analyze-toxicity/", response_model=List)
-async def analyze_toxicity(input: schemas.TextInputs):
-    try:
-        result = []
-        for item in input.inputs:
-            analyze_request = {
-            'comment': {'text': item.text},
-            'requestedAttributes': {'TOXICITY': {}},
-            "languages": ["ko", "en"],
-            }
-            response = client_toxic.comments().analyze(body=analyze_request).execute()
-            score = response['attributeScores']['TOXICITY']['summaryScore']['value']
-            result.append(score)
-        
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-
 ####분류기####
 @app.post("/bert", response_model=List)
 def predict(input: schemas.TextInputs):
@@ -138,3 +109,40 @@ def predict(input: schemas.TextInputs):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/predict")
+async def predict(input: schemas.modelInputs):
+
+    # 파일의 내용을 읽어 들입니다.
+    dialogue_length = len(input.inputs)
+
+    Delivery_score = 0
+    Toxicity_score = 0
+    cos_sim_question = 0
+    cos_sim_answer = 0
+    mlum_score= 0
+
+    for line in input.inputs:
+        # 각 줄을 JSON으로 파싱 -> {1, 2, 3}, {3, 4, 5}
+        data = line
+        
+        turn1 = data.model1
+        turn2 = data.user
+        turn3 = data.model2
+        
+        #입력된 대화 전처리
+        Delivery_score += aimodels.process_input(turn2)
+        Toxicity_score += score.analyze_toxicity(turn2)
+        cos_sim_question += aimodels.calculate_cosine_similarity(turn1, turn2)
+        cos_sim_answer += aimodels.calculate_cosine_similarity(turn2, turn3)
+        mlum_score += score.morph(turn2)
+  
+    result = {
+        "Delivery_score" : Delivery_score / dialogue_length,
+        "Toxicity_score" : Toxicity_score / dialogue_length,
+        "cos_sim_question" : cos_sim_question / dialogue_length,
+        "cos_sim_answer" : cos_sim_answer / dialogue_length,
+        "mlum_score" : mlum_score / dialogue_length,
+        }
+    
+    return result
