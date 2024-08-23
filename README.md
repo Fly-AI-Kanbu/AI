@@ -17,7 +17,9 @@ pip install --upgrade pip
 pip install kiwipiepy
 ```
 
-(5) run main.py
+(5) Move your checkpoint file to "AI/weight" (we use koelectra-base-v3-discriminator)
+
+(6) Run main.py
 
 ### Evaluation Metrics
 
