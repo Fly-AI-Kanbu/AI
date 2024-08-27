@@ -2,8 +2,9 @@
 from googleapiclient import discovery
 from kiwipiepy import Kiwi
 from bareunpy import Tagger
+from dotenv import load_dotenv
 import os
-
+load_dotenv()
 # Perspective API Key
 client_toxic = discovery.build(
     "commentanalyzer",
@@ -14,8 +15,8 @@ client_toxic = discovery.build(
 )
 
 # 바른 형태소 분석기
-tagger = Tagger(os.environ['API_KEY_FOR_BAREUN'], 'localhost')
-
+#tagger = Tagger(os.environ['API_KEY_FOR_BAREUN'], 'localhost')
+tagger = Tagger('koba-CWKBGMI-NUCU7ZY-U3SAD2Y-UNTOG4A', 'localhost')
 
 # 문장 분리기
 kiwi = Kiwi()

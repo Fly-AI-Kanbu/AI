@@ -1,12 +1,14 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel
 from openai import OpenAI
 from dotenv import load_dotenv
 from googleapiclient import discovery
 from typing import List
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 import os, io, json
+import re
 import schemas, aimodels, score
-
+import ffmpeg
 # .env 파일에서 환경 변수 로드
 load_dotenv()
 
@@ -15,28 +17,11 @@ app = FastAPI()
 client_openai = OpenAI(
     api_key = os.environ['OPENAI_API_KEY']
 )
-
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
 ####
 #####openai를 활용한 api
-@app.post("/chat", response_model=schemas.CompletionResponse)
-async def chat_completion(message: schemas.Message):
-    try:
-        # GPT-4 모델에 요청 보내기
-        completion = client_openai.chat.completions.create(
-            model="ft:gpt-4o-mini-2024-07-18:personal::9xpGLOhP", 
-            messages=[
-                {"role": "system", "content": "당신은 친구같은 한국어 선생님입니다. 제가 어색하게 말한다면 고쳐주고, 자연스럽다면 넘어가는 형식으로, 고쳐준 부분이 있다면 그 부분에 대한 한국어 발음과 영어 번역본을 알려주고, 고쳐줄 부분이 없다면 그 답변을 참고해 다음 대화 주제를 보내줘."},
-                {"role": "user", "content": message.content}
-            ]
-        )
-
-        # 응답 반환
-        return schemas.CompletionResponse(response=completion.choices[0].message.content)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-
 
 
 @app.post("/stt/")
@@ -110,6 +95,11 @@ def predict(input: schemas.TextInputs):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+def extract_text(input_text):
+    # 정규 표현식을 사용하여 영어와 관련된 문장들을 제거
+    cleaned_text = re.sub(r'[A-Za-z0-9.,\'"?!@#$%^&*(){}[\]:;`~\-_=+\\|<>/\n\r\t]+', '', input_text)
+    return cleaned_text.strip()
+
 @app.post("/predict")
 async def predict(input: schemas.modelInputs):
 
@@ -127,16 +117,20 @@ async def predict(input: schemas.modelInputs):
         data = line
         
         turn1 = data.model1
+        turn1 = extract_text(turn1)
+
         turn2 = data.user
+
         turn3 = data.model2
-        
+        turn3 = extract_text(turn3)
+
         #입력된 대화 전처리
         Delivery_score += aimodels.process_input(turn2)
         Toxicity_score += score.analyze_toxicity(turn2)
         cos_sim_question += aimodels.calculate_cosine_similarity(turn1, turn2)
         cos_sim_answer += aimodels.calculate_cosine_similarity(turn2, turn3)
         mlum_score += score.morph(turn2)
-  
+    
     result = {
         "Delivery_score" : Delivery_score / dialogue_length,
         "Toxicity_score" : Toxicity_score / dialogue_length,
@@ -144,5 +138,10 @@ async def predict(input: schemas.modelInputs):
         "cos_sim_answer" : cos_sim_answer / dialogue_length,
         "mlum_score" : mlum_score / dialogue_length,
         }
-    
+
     return result
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=597)
+
